@@ -229,6 +229,43 @@ OPENAI_MODEL=deepseek-chat
 
 ---
 
+### Q12c: 运行时报 `OllamaException / APIConnectionError`（All LLM models failed）怎么办？
+
+**症状**：日志出现 `litellm.APIConnectionError: OllamaException` 或 `Analysis failed: All LLM models failed (tried 1 model(s))`。
+
+逐项排查以下 5 个检查点：
+
+1. **Ollama 服务是否已启动**
+   ```bash
+   # 查看进程
+   pgrep -a ollama
+   # 若无输出则先启动
+   ollama serve
+   ```
+   确认服务正在监听：`curl http://localhost:11434`，应返回 `Ollama is running`。
+
+2. **`OLLAMA_API_BASE` 是否配置正确**
+   - ✅ 正确：`OLLAMA_API_BASE=http://localhost:11434`
+   - ❌ 错误：把 Ollama 地址填到 `OPENAI_BASE_URL`，会导致 URL 路径拼错（如 `…/api/generate/api/show`）。
+
+3. **模型名称是否加了 `ollama/` 前缀**
+   - ✅ 正确：`LITELLM_MODEL=ollama/qwen3:8b`
+   - ❌ 错误：`LITELLM_MODEL=qwen3:8b`（缺少前缀，litellm 无法路由到 Ollama）
+
+4. **模型是否已下载到本地**
+   ```bash
+   ollama list          # 查看已有模型
+   ollama pull qwen3:8b # 如无则先拉取
+   ```
+
+5. **远程部署 / Docker 时的网络与防火墙**
+   - 若 Ollama 和程序不在同一主机，需将 `OLLAMA_API_BASE` 改为实际 IP，如 `http://192.168.1.100:11434`。
+   - 确认防火墙已放行 11434 端口，且 Ollama 启动时绑定了正确地址（`OLLAMA_HOST=0.0.0.0:11434`）。
+
+> 完整配置示例见 [LLM 配置指南 → 示例 4（Ollama）](LLM_CONFIG_GUIDE.md#example-4-ollama)。
+
+---
+
 ## 🐳 Docker 相关
 
 ### Q13: Docker 容器启动后立即退出？
@@ -277,6 +314,25 @@ OPENAI_MODEL=deepseek-chat
 2. **改用 host 网络模式**：若上述仍无效，可在 `server` 服务下添加 `network_mode: host`，并移除 `ports` 映射。使用 host 模式时，`ports` 无效，**端口由 `command` 中的 `--port` 指定**。若宿主机默认端口已占用，可修改为其他端口（如 `.env` 中设置 `API_PORT=8080`），访问对应 `http://localhost:8080`。
 
 > 📌 相关 Issue: [#372](https://github.com/ZhuLinsen/daily_stock_analysis/issues/372)
+
+---
+
+### Q14.2: Docker 安装时，软件版本号写在哪个文件里？
+
+**结论**：对 Docker 用户来说，**最权威的版本不是某个 Python 源文件常量，而是你实际使用的镜像 tag**。
+
+**为什么**：
+1. 仓库的 Docker 发布由 `.github/workflows/docker-publish.yml` 触发，只有推送 `v*.*.*` 形式的 Git tag（例如 `v3.12.0`）时才会生成对应发布镜像。
+2. 这意味着 Docker 镜像版本本质上跟随 **GitHub Release / Git tag**，而不是写死在 `main.py`、`server.py` 或其他后端源码里。
+3. `apps/dsa-web/package.json` 里的 `version` 当前是占位值 `0.0.0`，WebUI “版本信息”卡片更适合用来确认静态资源是否已重建，不应当作 Docker 发布版本。
+4. 桌面端版本是单独维护的，写在 `apps/dsa-desktop/package.json` 的 `version` 字段；它只代表 Electron 桌面端，不代表 Docker 镜像版本。
+
+**怎么查当前 Docker 版本**：
+1. **先看部署命令或 Compose 文件里的镜像 tag**：例如 `ghcr.io/zhulinsen/daily_stock_analysis:v3.12.0`，其中 `v3.12.0` 就是当前部署版本。
+2. **如果你拉的是 `latest`**：请回看当时的 `docker pull` / `docker-compose.yml` / 部署脚本，或对照 [GitHub Releases](https://github.com/ZhuLinsen/daily_stock_analysis/releases) 确认对应发布记录。
+3. **如果只是想确认前端是否更新到新构建**：可以打开 WebUI 的“系统设置”页查看 `构建标识` / `构建时间`；这能帮助确认静态资源是否刷新，但不等同于 Docker 镜像发布版本。
+
+**建议**：如果你想避免重复更新，部署时尽量固定使用明确的版本 tag（如 `v3.12.0`），不要长期依赖 `latest`。
 
 ---
 
@@ -331,4 +387,4 @@ python main.py --market-only
 
 ---
 
-*最后更新：2026-02-28*
+*最后更新：2026-04-20*
